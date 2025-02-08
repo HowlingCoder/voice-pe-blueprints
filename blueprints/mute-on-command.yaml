@@ -1,0 +1,40 @@
+blueprint:
+  name: Voice - Mute on Command 🔇
+  description: This mutes all media players in the same room, when your voice assistant starts listening.
+  author: HowlingCoder
+  domain: automation
+  input:
+    satellites:
+      name: Voice Assistants
+      description: Select the voice assistants that should trigger muting
+      selector:
+        entity:
+          multiple: true
+          domain: assist_satellite
+
+trigger:
+  - platform: state
+    entity_id: !input satellites
+    to: listening
+
+action:
+  - variables:
+      room_id: "{{ device_attr(device_id(trigger.entity_id), 'area_id') }}"
+  - service: media_player.volume_mute
+    target:
+      area_id: "{{ room_id }}"
+    data:
+      is_volume_muted: true
+
+  - wait_for_trigger:
+      - platform: state
+        entity_id: !input satellites
+        to: idle
+
+  - service: media_player.volume_mute
+    target:
+      area_id: "{{ room_id }}"
+    data:
+      is_volume_muted: false
+
+mode: parallel
