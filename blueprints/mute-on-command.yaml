@@ -19,10 +19,14 @@ trigger:
 
 action:
   - variables:
-      room_id: "{{ device_attr(device_id(trigger.entity_id), 'area_id') }}"
+      media_players: |-
+        {{ area_entities(device_attr(device_id(trigger.entity_id), 'area_id'))
+        | select('match', 'media_player.*')
+        | reject('is_device_attr', "id", device_id(trigger.entity_id)) 
+        | list }}
   - service: media_player.volume_mute
     target:
-      area_id: "{{ room_id }}"
+      entity_id: "{{media_players}}"
     data:
       is_volume_muted: true
 
@@ -33,7 +37,7 @@ action:
 
   - service: media_player.volume_mute
     target:
-      area_id: "{{ room_id }}"
+      entity_id: "{{media_players}}"
     data:
       is_volume_muted: false
 
