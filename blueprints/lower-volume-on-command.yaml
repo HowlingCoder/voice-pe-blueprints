@@ -1,0 +1,70 @@
+blueprint:
+  name: Voice - Volume Control on Command 🔇
+  description: This lowers volume of all media players in the same room when your voice assistant starts listening, then restores original volumes.
+  author: HowlingCoder
+  domain: automation
+  input:
+    satellites:
+      name: Voice Assistants
+      description: Select the voice assistants that should trigger volume control
+      selector:
+        entity:
+          multiple: true
+          domain: assist_satellite
+    mute_volume:
+      name: Mute Volume Level
+      description: Volume level to set during listening (0.0 = silent, 0.1 = 10%)
+      default: 0.01
+      selector:
+        number:
+          min: 0.0
+          max: 0.5
+          step: 0.01
+          mode: slider
+
+trigger:
+  - platform: state
+    entity_id: !input satellites
+    to: listening
+
+action:
+  - variables:
+      media_players: |-
+        {{ area_entities(device_attr(device_id(trigger.entity_id), 'area_id'))
+        | select('match', 'media_player.*')
+        | reject('is_device_attr', "id", device_id(trigger.entity_id)) 
+        | list }}
+      mute_level: !input mute_volume
+      player_volumes: |-
+        {% set ns = namespace(result=[]) %}
+        {% for player in media_players %}
+          {% if states(player) not in ['unavailable', 'unknown', 'off'] and state_attr(player, 'volume_level') != none %}
+            {% set ns.result = ns.result + [{'entity': player, 'volume': state_attr(player, 'volume_level')}] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.result }}
+  
+  - repeat:
+      for_each: "{{ player_volumes }}"
+      sequence:
+        - service: media_player.volume_set
+          target:
+            entity_id: "{{ repeat.item.entity }}"
+          data:
+            volume_level: "{{ mute_level }}"
+
+  - wait_for_trigger:
+      - platform: state
+        entity_id: !input satellites
+        to: idle
+
+  - repeat:
+      for_each: "{{ player_volumes }}"
+      sequence:
+        - service: media_player.volume_set
+          target:
+            entity_id: "{{ repeat.item.entity }}"
+          data:
+            volume_level: "{{ repeat.item.volume }}"
+
+mode: parallel
