@@ -1,0 +1,118 @@
+blueprint:
+  name: Voice - Find My Phone 📱
+  description: Use voice commands to make your phone play TTS repeatedly until dismissed
+  author: HowlingCoder
+  domain: automation
+  input:
+    voice_commands:
+      name: Voice Commands
+      description: Command to activate
+      default:
+        find my phone
+      selector:
+        text:
+    target_device:
+      name: Target Phone/Device
+      description: Select the phone/ tablet to find
+      selector:
+        device:
+          integration: mobile_app
+    tts_message:
+      name: TTS Message
+      description: Message to speak repeatedly on the phone
+      default: "I am here! Your phone is right here!"
+      selector:
+        text:
+    repeat_interval:
+      name: Repeat Interval
+      description: Seconds between TTS repetitions
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+          mode: slider
+    max_duration:
+      name: Maximum Duration
+      description: Maximum time to search in minutes (safety timeout)
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 15
+          step: 1
+          mode: slider
+
+trigger:
+  - platform: conversation
+    command: !input voice_commands
+
+action:
+  - variables:
+      device_name: !input target_device
+      message: !input tts_message
+      interval: !input repeat_interval
+      max_time: !input max_duration
+      notify_service: |-
+        {{ 'notify.mobile_app_' + device_attr(device_name, 'name')|lower|replace(' ', '_')|replace('-', '_') }}
+
+  - data:
+      title: 📱 Phone Finder
+      message: Finding your phone... Tap to dismiss
+      data:
+        tag: phone_finder
+        persistent: true
+        importance: max
+        channel: Phone Finder
+        actions:
+          - action: DISMISS_PHONE_FINDER
+            title: Found It!
+    action: "{{ notify_service }}"
+    
+  - repeat:
+      count: "{{ (max_time * 60 / interval) | int }}"
+      sequence:
+        - data:
+            message: TTS
+            data:
+              ttl: 0
+              priority: high
+              media_stream: alarm_stream
+              tts_text: "{{ message }}"
+          action: "{{ notify_service }}"
+        - wait_for_trigger:
+            - event_type: mobile_app_notification_action
+              event_data:
+                action: DISMISS_PHONE_FINDER
+              trigger: event
+          timeout:
+            seconds: "{{ interval }}"
+          continue_on_timeout: true
+        - if:
+            - condition: template
+              value_template: "{{ wait.trigger is not none }}"
+          then:
+            - data:
+                message: clear_notification
+                data:
+                  tag: phone_finder
+              action: "{{ notify_service }}"
+            - stop: Phone found
+            
+  - data:
+      message: clear_notification
+      data:
+        tag: phone_finder
+    action: "{{ notify_service }}"
+    
+  - data:
+      title: 📱 Search Timeout
+      message: Phone finder stopped after {{ max_time }} minutes
+      data:
+        tag: phone_timeout
+        timeout: 10
+    action: "{{ notify_service }}"
+    
+mode: restart
+max_exceeded: silent
